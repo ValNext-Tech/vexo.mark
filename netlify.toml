@@ -1,0 +1,23 @@
+# netlify.toml
+# Configuración de deploy para Netlify — Vexo Mark (React + Vite)
+
+[build]
+  # Comando de build de producción
+  command = "npm run build"
+  # Directorio de salida del build de Vite
+  publish = "dist"
+
+[build.environment]
+  # Versión de Node.js — debe coincidir con la usada en desarrollo
+  NODE_VERSION = "20"
+
+# Redirects necesarios para React Router (SPA)
+# Sin esto, cualquier recarga en /cart, /checkout, /admin, etc.
+# devolvería un 404 de Netlify en lugar de dejar que React maneje la ruta.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[context.production]
+  environment = { NODE_ENV = "production" }

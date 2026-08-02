@@ -8,7 +8,7 @@ export const Catalog: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [search, setSearch] = useState<string>('');
-  const { addToCart, cart } = useCart();
+  const { addToCart, cart, isLocked } = useCart();
 
   useEffect(() => {
     fetchProducts();
@@ -18,10 +18,10 @@ export const Catalog: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('productos')
+        .from('products')
         .select('*')
-        .eq('activo', true)
-        .order('nombre', { ascending: true });
+        .eq('active', true)
+        .order('name', { ascending: true });
 
       if (error) throw error;
       setProducts(data || []);
@@ -39,7 +39,7 @@ export const Catalog: React.FC = () => {
 
   const filteredProducts = products.filter(
     p =>
-      p.nombre.toLowerCase().includes(search.toLowerCase()) ||
+      p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -49,6 +49,25 @@ export const Catalog: React.FC = () => {
         <div>
           <h1 style={{ fontSize: '22px', fontWeight: 800, marginBottom: '4px' }}>Catálogo</h1>
         </div>
+
+        {isLocked && (
+          <div
+            style={{
+              padding: '10px 14px',
+              backgroundColor: 'var(--primary-light)',
+              border: '1px solid var(--primary)',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: '13px',
+              color: 'var(--text-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span>ℹ️</span>
+            <span>Tienes un pedido en curso. Tu carrito está en modo de solo lectura hasta que se entregue.</span>
+          </div>
+        )}
 
         {/* Barra de búsqueda */}
         <div style={{ position: 'relative', maxWidth: '400px', width: '100%' }}>
@@ -75,26 +94,26 @@ export const Catalog: React.FC = () => {
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: '64px' }}>
-          <Loader2 className="animate-spin text-emerald-500" size={36} style={{ stroke: '#10b981' }} />
+          <Loader2 className="animate-spin" size={32} style={{ color: 'var(--primary)' }} />
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="glass" style={{ padding: '48px', borderRadius: 'var(--radius-md)', textAlign: 'center' }}>
+        <div className="glass" style={{ padding: '40px', textAlign: 'center', borderRadius: 'var(--radius-md)' }}>
           <p style={{ color: 'var(--text-secondary)' }}>No se encontraron productos disponibles.</p>
         </div>
       ) : (
         <div className="grid-catalog">
           {filteredProducts.map(product => {
-            const qtyInCart = getProductStockInCart(product.id);
-            const remainingStock = product.stock - qtyInCart;
             const isOutOfStock = product.stock <= 0;
+            const cartQty = getProductStockInCart(product.id);
+            const remainingStock = product.stock - cartQty;
             const isLimitReached = remainingStock <= 0;
 
             return (
               <div key={product.id} className="product-card glass">
                 <div className="product-image-container">
                   <img
-                    src={product.imagen_url || 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=500&q=80'}
-                    alt={product.nombre}
+                    src={product.image_url || 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=500&q=80'}
+                    alt={product.name}
                     className="product-image"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src =
@@ -108,15 +127,15 @@ export const Catalog: React.FC = () => {
 
                 <div className="product-info">
                   <span className="product-sku">{product.sku}</span>
-                  <h3 className="product-title" title={product.nombre}>
-                    {product.nombre}
+                  <h3 className="product-title" title={product.name}>
+                    {product.name}
                   </h3>
                   
                   <div className="product-price-row">
-                    <span className="product-price">{formatPrice(product.precio)}</span>
+                    <span className="product-price">{formatPrice(product.price)}</span>
                     <button
-                      className={`btn btn-primary ${isOutOfStock || isLimitReached ? 'disabled' : ''}`}
-                      disabled={isOutOfStock || isLimitReached}
+                      className={`btn btn-primary ${isOutOfStock || isLimitReached || isLocked ? 'disabled' : ''}`}
+                      disabled={isOutOfStock || isLimitReached || isLocked}
                       onClick={() => addToCart(product, 1)}
                       style={{
                         padding: '6px 10px',
@@ -127,7 +146,7 @@ export const Catalog: React.FC = () => {
                       }}
                     >
                       <ShoppingCart size={14} />
-                      {isLimitReached && !isOutOfStock ? 'Límite alcanzado' : 'Añadir'}
+                      {isLocked ? 'Bloqueado' : isLimitReached && !isOutOfStock ? 'Límite' : 'Añadir'}
                     </button>
                   </div>
                 </div>

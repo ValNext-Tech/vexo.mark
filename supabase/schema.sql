@@ -1,190 +1,176 @@
--- Script de configuración de Base de Datos para Supabase (PostgreSQL)
--- Copiar y ejecutar en el SQL Editor de Supabase (https://supabase.com/dashboard/project/_/sql/new)
+-- Database Setup Script for Supabase (PostgreSQL)
+-- Copy and run in the Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql/new)
 
--- 1. Habilitar la extensión para UUID si no está habilitada
+-- 1. Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Limpieza de tablas previas (en caso de re-ejecución)
-DROP TRIGGER IF EXISTS trg_update_stock ON pedido_items;
-DROP FUNCTION IF EXISTS update_product_stock();
-DROP TABLE IF EXISTS comprobantes_pago CASCADE;
-DROP TABLE IF EXISTS pedido_items CASCADE;
-DROP TABLE IF EXISTS pedidos CASCADE;
-DROP TABLE IF EXISTS entregas CASCADE;
-DROP TABLE IF EXISTS productos CASCADE;
-DROP TABLE IF EXISTS lives CASCADE;
-DROP TABLE IF EXISTS clientes CASCADE;
+-- 2. Cleanup previous tables (in case of re-execution)
+DROP TABLE IF EXISTS payment_receipts CASCADE;
+DROP TABLE IF EXISTS order_items CASCADE;
+DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS deliveries CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS customers CASCADE;
+DROP FUNCTION IF EXISTS update_product_stock() CASCADE;
 
--- 3. Creación de Tablas
+-- 3. Table Creation
 
--- Tabla: Clientes
-CREATE TABLE clientes (
+-- Table: Customers
+CREATE TABLE customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nombre TEXT NOT NULL,
-    telefono TEXT UNIQUE NOT NULL, -- Identificador único para el cliente
-    notas TEXT,
+    name TEXT NOT NULL,
+    phone TEXT UNIQUE NOT NULL,
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tabla: Lives (Transmisiones en vivo)
-CREATE TABLE lives (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    nombre TEXT NOT NULL,
-    fecha TIMESTAMPTZ DEFAULT now(),
-    activo BOOLEAN DEFAULT false, -- Indica si es el live actualmente activo
-    notas TEXT
-);
-
--- Tabla: Productos (Catálogo)
-CREATE TABLE productos (
+-- Table: Products (Catalog)
+CREATE TABLE products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sku TEXT UNIQUE NOT NULL,
-    nombre TEXT NOT NULL,
-    precio NUMERIC(10, 2) NOT NULL CHECK (precio >= 0),
-    imagen_url TEXT,
-    activo BOOLEAN DEFAULT true,
-    stock INT DEFAULT 0 CHECK (stock >= 0), -- Evita stock negativo
+    name TEXT NOT NULL,
+    price NUMERIC(10, 2) NOT NULL CHECK (price >= 0),
+    image_url TEXT,
+    active BOOLEAN DEFAULT true,
+    stock INT DEFAULT 0 CHECK (stock >= 0),
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tabla: Entregas (Citas de Entrega asociadas a Clientes)
-CREATE TABLE entregas (
+-- Table: Deliveries (Delivery appointments linked to Customers)
+CREATE TABLE deliveries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
-    tipo_entrega TEXT NOT NULL CHECK (tipo_entrega IN ('personal', 'paqueteria', 'encomienda')),
-    fecha_entrega DATE NOT NULL,
-    hora_hh INT CHECK (hora_hh BETWEEN 0 AND 23),
-    hora_mm INT CHECK (hora_mm BETWEEN 0 AND 59),
-    lugar TEXT NOT NULL,
-    estado_entrega TEXT DEFAULT 'pendiente' CHECK (estado_entrega IN ('pendiente', 'entregado', 'cancelado')),
-    notas TEXT,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    delivery_type TEXT NOT NULL CHECK (delivery_type IN ('personal', 'courier', 'pickup')),
+    delivery_date DATE NOT NULL,
+    hour_hh INT CHECK (hour_hh BETWEEN 0 AND 23),
+    hour_mm INT CHECK (hour_mm BETWEEN 0 AND 59),
+    location TEXT NOT NULL,
+    delivery_status TEXT DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'delivered', 'cancelled')),
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tabla: Pedidos (Ordenes de compra del cliente)
-CREATE TABLE pedidos (
+-- Table: Orders (Customer purchase orders)
+CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    cliente_id UUID NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
-    entrega_id UUID REFERENCES entregas(id) ON DELETE SET NULL, -- Consolida este pedido bajo una entrega
-    live_id UUID REFERENCES lives(id) ON DELETE SET NULL, -- Vincula el pedido al live del cual provino
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    delivery_id UUID REFERENCES deliveries(id) ON DELETE SET NULL,
     total NUMERIC(10, 2) NOT NULL CHECK (total >= 0),
-    estado_pago TEXT DEFAULT 'pendiente' CHECK (estado_pago IN ('pendiente', 'parcial', 'pagado')),
-    notas TEXT,
+    payment_status TEXT DEFAULT 'pending' CHECK (payment_status IN ('pending', 'partial', 'paid')),
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Tabla: Items del Pedido (Detalle de productos comprados)
-CREATE TABLE pedido_items (
+-- Table: Order Items (Purchased product details)
+CREATE TABLE order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pedido_id UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
-    producto_id UUID REFERENCES productos(id) ON DELETE SET NULL,
-    cantidad INT NOT NULL CHECK (cantidad > 0),
-    precio_unitario NUMERIC(10, 2) NOT NULL CHECK (precio_unitario >= 0)
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+    quantity INT NOT NULL CHECK (quantity > 0),
+    unit_price NUMERIC(10, 2) NOT NULL CHECK (unit_price >= 0),
+    custom_name TEXT,
+    image_url TEXT
 );
 
--- Tabla: Comprobantes de Pago (Imágenes del recibo bancario/QR)
-CREATE TABLE comprobantes_pago (
+-- Table: Payment Receipts (Bank receipt / QR images)
+CREATE TABLE payment_receipts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pedido_id UUID NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
-    imagen_url TEXT NOT NULL,
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    image_url TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. Trigger de Control de Stock
--- Cuando se inserta un item en pedido_items, se reduce el stock en la tabla productos.
--- Si el stock llega a ser menor a 0, la restricción CHECK (stock >= 0) en productos
--- abortará la transacción automáticamente, previniendo sobreventa.
+-- 4. Stock Control Trigger
+-- When an item is inserted into order_items, stock is reduced in the products table.
+-- If stock goes below 0, the CHECK (stock >= 0) constraint on products
+-- will automatically abort the transaction, preventing overselling.
 CREATE OR REPLACE FUNCTION update_product_stock()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE productos
-    SET stock = stock - NEW.cantidad
-    WHERE id = NEW.producto_id;
+    UPDATE products
+    SET stock = stock - NEW.quantity
+    WHERE id = NEW.product_id;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_update_stock
-AFTER INSERT ON pedido_items
+AFTER INSERT ON order_items
 FOR EACH ROW
 EXECUTE FUNCTION update_product_stock();
 
--- 5. Configuración de Seguridad RLS (Row Level Security)
+-- 5. RLS Security Configuration (Row Level Security)
 
-ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE lives ENABLE ROW LEVEL SECURITY;
-ALTER TABLE productos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE entregas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pedidos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pedido_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE comprobantes_pago ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_receipts ENABLE ROW LEVEL SECURITY;
 
--- Políticas para: Lives (Lectura pública, Escritura de admins)
-CREATE POLICY "Permitir lectura pública de lives" ON lives
+-- Policies for: Products (Public read, Admin write)
+CREATE POLICY "Allow public read of active products" ON products
+    FOR SELECT USING (active = true);
+
+CREATE POLICY "Allow all for authenticated partners on products" ON products
+    USING (auth.role() = 'authenticated')
+    WITH CHECK (auth.role() = 'authenticated');
+
+-- Policies for: Customers (Public search by phone and insert during checkout, Admin write)
+CREATE POLICY "Allow public read of customers" ON customers
     FOR SELECT USING (true);
 
-CREATE POLICY "Permitir todo a socios autenticados en lives" ON lives
+CREATE POLICY "Allow public insert of customers" ON customers
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow all for authenticated partners on customers" ON customers
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');
 
--- Políticas para: Productos (Lectura pública, Escritura de admins)
-CREATE POLICY "Permitir lectura pública de productos activos" ON productos
-    FOR SELECT USING (activo = true);
-
-CREATE POLICY "Permitir todo a socios autenticados en productos" ON productos
-    USING (auth.role() = 'authenticated')
-    WITH CHECK (auth.role() = 'authenticated');
-
--- Políticas para: Clientes (Búsqueda por teléfono e inserción pública durante checkout, Escritura de admins)
-CREATE POLICY "Permitir lectura y registro público de clientes" ON clientes
+-- Policies for: Deliveries (Public insert+read on checkout, Admin full access)
+CREATE POLICY "Allow public read of deliveries" ON deliveries
     FOR SELECT USING (true);
 
-CREATE POLICY "Permitir inserción pública de clientes" ON clientes
+CREATE POLICY "Allow public insert of deliveries" ON deliveries
     FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Permitir todo a socios autenticados en clientes" ON clientes
+CREATE POLICY "Allow all for authenticated partners on deliveries" ON deliveries
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');
 
--- Políticas para: Entregas (Inserción pública en checkout, Lectura y edición de admins)
-CREATE POLICY "Permitir inserción pública de entregas" ON entregas
+-- Policies for: Orders (Public insert+read on checkout, Admin full access)
+CREATE POLICY "Allow public read of orders" ON orders
+    FOR SELECT USING (true);
+
+CREATE POLICY "Allow public insert of orders" ON orders
     FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Permitir todo a socios autenticados en entregas" ON entregas
+CREATE POLICY "Allow all for authenticated partners on orders" ON orders
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');
 
--- Políticas para: Pedidos (Inserción pública en checkout, Lectura y edición de admins)
-CREATE POLICY "Permitir inserción pública de pedidos" ON pedidos
+-- Policies for: Order Items (Public insert on checkout, Admin read and edit)
+CREATE POLICY "Allow public insert of order items" ON order_items
     FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Permitir todo a socios autenticados en pedidos" ON pedidos
+CREATE POLICY "Allow all for authenticated partners on order items" ON order_items
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');
 
--- Políticas para: Pedido Items (Inserción pública en checkout, Lectura y edición de admins)
-CREATE POLICY "Permitir inserción pública de items de pedidos" ON pedido_items
+-- Policies for: Payment Receipts (Public insert+read on checkout, Admin full access)
+CREATE POLICY "Allow public read of payment receipts" ON payment_receipts
+    FOR SELECT USING (true);
+
+CREATE POLICY "Allow public insert of payment receipts" ON payment_receipts
     FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Permitir todo a socios autenticados en items de pedidos" ON pedido_items
+CREATE POLICY "Allow all for authenticated partners on payment receipts" ON payment_receipts
     USING (auth.role() = 'authenticated')
     WITH CHECK (auth.role() = 'authenticated');
 
--- Políticas para: Comprobantes de Pago (Inserción pública en checkout, Lectura y edición de admins)
-CREATE POLICY "Permitir inserción pública de comprobantes de pago" ON comprobantes_pago
-    FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Permitir todo a socios autenticados en comprobantes" ON comprobantes_pago
-    USING (auth.role() = 'authenticated')
-    WITH CHECK (auth.role() = 'authenticated');
-
--- 6. Insertar Datos de Prueba (Productos Iniciales)
-INSERT INTO productos (sku, nombre, precio, stock, imagen_url, activo) VALUES
+-- 6. Seed Data (Initial Products)
+INSERT INTO products (sku, name, price, stock, image_url, active) VALUES
 ('VEXO-101', 'Vestido Floral Primavera', 120.00, 10, 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=500&q=80', true),
 ('VEXO-102', 'Blusa Seda Celeste', 75.00, 5, 'https://images.unsplash.com/photo-1548624149-f9b1859aa7d0?w=500&q=80', true),
 ('VEXO-103', 'Chaqueta Jeans Casual', 180.00, 3, 'https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=500&q=80', true),
 ('VEXO-104', 'Pantalón Mom Fit Azul', 110.00, 8, 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=500&q=80', true);
-
--- Insertar un Live de Prueba
-INSERT INTO lives (nombre, activo, notas) VALUES
-('Transmisión de Lanzamiento Vexo', true, 'Primer live utilizando el nuevo MVP con Supabase');

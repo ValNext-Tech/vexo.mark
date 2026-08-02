@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { Trash2, Plus, Minus, ArrowRight, ArrowLeft, ShoppingBag } from 'lucide-react';
 
 export const Cart: React.FC = () => {
-  const { cart, removeFromCart, updateQuantity, getCartTotal } = useCart();
+  const { cart, removeFromCart, updateQuantity, getCartTotal, isLocked } = useCart();
 
   if (cart.length === 0) {
     return (
@@ -71,8 +71,8 @@ export const Cart: React.FC = () => {
               }}
             >
               <img
-                src={item.product.imagen_url}
-                alt={item.product.nombre}
+                src={item.product.image_url}
+                alt={item.product.name}
                 style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }}
               />
 
@@ -80,9 +80,9 @@ export const Cart: React.FC = () => {
                 <span className="product-sku" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   {item.product.sku}
                 </span>
-                <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{item.product.nombre}</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{item.product.name}</h3>
                 <span style={{ color: 'var(--text-success)', fontWeight: 600 }}>
-                  {formatPrice(item.product.precio)}
+                  {formatPrice(item.product.price)}
                 </span>
               </div>
 
@@ -92,7 +92,7 @@ export const Cart: React.FC = () => {
                   className="btn btn-secondary btn-icon-only"
                   style={{ width: '32px', height: '32px' }}
                   onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                  disabled={item.quantity <= 1}
+                  disabled={isLocked || item.quantity <= 1}
                 >
                   <Minus size={14} />
                 </button>
@@ -101,7 +101,7 @@ export const Cart: React.FC = () => {
                   className="btn btn-secondary btn-icon-only"
                   style={{ width: '32px', height: '32px' }}
                   onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                  disabled={item.quantity >= item.product.stock}
+                  disabled={isLocked || item.quantity >= item.product.stock}
                 >
                   <Plus size={14} />
                 </button>
@@ -112,6 +112,7 @@ export const Cart: React.FC = () => {
                 className="btn btn-secondary btn-icon-only"
                 style={{ width: '36px', height: '36px', color: 'var(--accent-red)' }}
                 onClick={() => removeFromCart(item.product.id)}
+                disabled={isLocked}
               >
                 <Trash2 size={16} />
               </button>
@@ -129,10 +130,10 @@ export const Cart: React.FC = () => {
             {cart.map(item => (
               <div key={item.product.id} style={{ display: 'flex', justifyContent: 'between', fontSize: '14px', color: 'var(--text-secondary)' }}>
                 <span style={{ flex: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                  {item.product.nombre} (x{item.quantity})
+                  {item.product.name} (x{item.quantity})
                 </span>
                 <span style={{ marginLeft: '12px', color: 'var(--text-primary)', fontWeight: 500 }}>
-                  {formatPrice(item.product.precio * item.quantity)}
+                  {formatPrice(item.product.price * item.quantity)}
                 </span>
               </div>
             ))}
@@ -153,11 +154,35 @@ export const Cart: React.FC = () => {
             <span style={{ color: 'var(--text-success)' }}>{formatPrice(getCartTotal())}</span>
           </div>
 
+          {isLocked && (
+            <div
+              style={{
+                padding: '8px 12px',
+                backgroundColor: 'rgba(255,255,255,0.02)',
+                border: '1px dashed var(--border-color)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+                textAlign: 'center',
+                marginTop: '4px',
+              }}
+            >
+              🔒 Tienes un pedido pendiente de entrega. No puedes realizar nuevas compras hasta completarlo.
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
-            <Link to="/checkout" className="btn btn-primary" style={{ width: '100%' }}>
-              Ir al Checkout
-              <ArrowRight size={16} />
-            </Link>
+            {isLocked ? (
+              <button className="btn btn-primary disabled" disabled style={{ width: '100%' }}>
+                Pedido en curso...
+                <ArrowRight size={16} />
+              </button>
+            ) : (
+              <Link to="/checkout" className="btn btn-primary" style={{ width: '100%' }}>
+                Ir al Checkout
+                <ArrowRight size={16} />
+              </Link>
+            )}
             <Link to="/" className="btn btn-secondary" style={{ width: '100%' }}>
               <ArrowLeft size={16} />
               Seguir Comprando

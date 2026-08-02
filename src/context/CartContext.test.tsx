@@ -14,10 +14,10 @@ const TestComponent: React.FC = () => {
   const sampleProduct: Product = {
     id: 'p1',
     sku: 'SKU-TEST-001',
-    nombre: 'Test Product',
-    precio: 20,
-    imagen_url: '',
-    activo: true,
+    name: 'Test Product',
+    price: 20,
+    image_url: '',
+    active: true,
     stock: 5 // Stock máximo de 5
   };
 
@@ -32,7 +32,7 @@ const TestComponent: React.FC = () => {
       <div data-testid="cart-items">
         {cart.map(item => (
           <div key={item.product.id} data-testid="item">
-            {item.product.nombre} - Qty: {item.quantity}
+            {item.product.name} - Qty: {item.quantity}
           </div>
         ))}
       </div>

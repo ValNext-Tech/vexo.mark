@@ -104,21 +104,8 @@ Cuando trabajes con un asistente de codificación de IA (como Antigravity), pued
 
 ---
 
-## 📡 4. Opcional: Implementación Futura de "Lives" (Transmisiones en Vivo)
+## 📡 4. Nota: Agrupación de Pedidos
 
-Por decisión estratégica, **la función de "Lives" se ha mantenido desactivada en el código activo de este MVP** para simplificar la interfaz de la Tienda Virtual. Sin embargo, la arquitectura ya está preparada a nivel de base de datos para que puedas decidir si implementarla en el futuro sin romper nada.
+Los pedidos se agrupan directamente por **fecha de creación** (`created_at`). No se utiliza una arquitectura de "Lives" o transmisiones en vivo. En el futuro, se podrán implementar filtros por rango de fechas en el dashboard de administración para facilitar el arqueo de caja.
 
-### Estructura ya preparada en Base de Datos:
-* **Tabla `lives`**: Ya existe en [schema.sql](supabase/schema.sql) para registrar ID, nombre del directo, fecha y si está activo.
-* **Columna `pedidos.live_id`**: Es una relación de clave foránea `Nullable` (acepta valores nulos). Los pedidos actuales se guardan con esta columna vacía sin generar ningún error.
-
-### Pasos para implementarlo en el futuro (si decides activarlo):
-Si deseas reactivar los directos, tú o tu asistente de IA deben realizar estos tres pasos:
-1. **Administración de Directos**:
-   - Crear una pestaña "Directos" en el panel de administración para listar, crear directos y marcar uno solo como `"activo"` (mediante un switch que apague los demás y encienda el seleccionado).
-2. **Asociación en Checkout**:
-   - Modificar la función de guardado en `pages/Checkout.tsx` para que, antes de registrar el pedido, haga una consulta rápida a Supabase: `SELECT id FROM lives WHERE activo = true LIMIT 1`.
-   - Si existe un live activo, guardar ese ID en la columna `live_id` del nuevo pedido.
-3. **Filtros en Dashboard**:
-   - Añadir un menú desplegable en el panel de control de socios para filtrar las estadísticas y la tabla de pedidos por "Live" específico, facilitando el arqueo de caja al final de cada directo.
 

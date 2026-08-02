@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../utils/supabaseClient';
 import { formatPrice } from '../utils/currency';
+import { generarSku, validarProducto } from '../utils/catalogUtils';
 import { Loader2, Plus, ArrowLeft, Image as ImageIcon, Save, X } from 'lucide-react';
 
 export const AdminCatalog: React.FC = () => {
@@ -41,7 +42,7 @@ export const AdminCatalog: React.FC = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
-        .from('productos')
+        .from('products')
         .select('*')
         .order('created_at', { ascending: false });
 
@@ -62,11 +63,6 @@ export const AdminCatalog: React.FC = () => {
     }
   };
 
-  const generateSku = () => {
-    const count = products.length + 1;
-    setSku(`VEXO-${100 + count}`);
-  };
-
   const handleOpenAddForm = () => {
     setEditingProduct(null);
     setNombre('');
@@ -75,17 +71,16 @@ export const AdminCatalog: React.FC = () => {
     setActivo(true);
     setImageFile(null);
     setImagePreview(null);
+    // Generar SKU sugerido — lógica extraída a catalogUtils.ts (Pitch C)
+    setSku(generarSku(products.length));
     setShowAddForm(true);
-    // Generar SKU sugerido
-    const count = products.length + 1;
-    setSku(`VEXO-${100 + count}`);
   };
 
   const handleToggleActive = async (product: any) => {
     try {
       const { error } = await supabase
-        .from('productos')
-        .update({ activo: !product.activo })
+        .from('products')
+        .update({ active: !product.active })
         .eq('id', product.id);
 
       if (error) throw error;
@@ -97,11 +92,19 @@ export const AdminCatalog: React.FC = () => {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validación de campos — extraída a catalogUtils.ts (Pitch C)
+    const errorValidacion = validarProducto({ nombre, precio, stock, sku });
+    if (errorValidacion) {
+      setErrorMsg(errorValidacion.mensaje);
+      return;
+    }
+
     try {
       setSaving(true);
       setErrorMsg('');
 
-      let imageUrl = editingProduct ? editingProduct.imagen_url : '';
+      let imageUrl = editingProduct ? editingProduct.image_url : '';
 
       // 1. Subir imagen si se seleccionó una nueva
       if (imageFile) {
@@ -109,14 +112,14 @@ export const AdminCatalog: React.FC = () => {
         const fileName = `product_${Date.now()}.${fileExt}`;
         
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('productos')
+          .from('products')
           .upload(fileName, imageFile);
 
         if (uploadError) throw uploadError;
 
         // Obtener la URL pública de la imagen del storage
         const { data: { publicUrl } } = supabase.storage
-          .from('productos')
+          .from('products')
           .getPublicUrl(uploadData.path);
         
         imageUrl = publicUrl;
@@ -126,14 +129,14 @@ export const AdminCatalog: React.FC = () => {
       if (editingProduct) {
         // Modo Edición
         const { error } = await supabase
-          .from('productos')
+          .from('products')
           .update({
             sku,
-            nombre,
-            precio,
+            name: nombre,
+            price: precio,
             stock,
-            activo,
-            imagen_url: imageUrl,
+            active: activo,
+            image_url: imageUrl,
           })
           .eq('id', editingProduct.id);
 
@@ -141,14 +144,14 @@ export const AdminCatalog: React.FC = () => {
       } else {
         // Modo Creación
         const { error } = await supabase
-          .from('productos')
+          .from('products')
           .insert({
             sku,
-            nombre,
-            precio,
+            name: nombre,
+            price: precio,
             stock,
-            activo,
-            imagen_url: imageUrl || 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=500&q=80',
+            active: activo,
+            image_url: imageUrl || 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?w=500&q=80',
           });
 
         if (error) throw error;
@@ -166,13 +169,13 @@ export const AdminCatalog: React.FC = () => {
 
   const handleEditProduct = (product: any) => {
     setEditingProduct(product);
-    setNombre(product.nombre);
-    setPrecio(parseFloat(product.precio));
+    setNombre(product.name);
+    setPrecio(parseFloat(product.price));
     setStock(product.stock);
     setSku(product.sku);
-    setActivo(product.activo);
+    setActivo(product.active);
     setImageFile(null);
-    setImagePreview(product.imagen_url);
+    setImagePreview(product.image_url);
     setShowAddForm(true);
   };
 
@@ -203,7 +206,7 @@ export const AdminCatalog: React.FC = () => {
         <div className="glass animate-fade-in" style={{ padding: '24px', borderRadius: 'var(--radius-md)', maxWidth: '600px', margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
             <h2 style={{ fontSize: '20px', fontWeight: 700 }}>
-              {editingProduct ? `Editar: ${editingProduct.nombre}` : 'Nuevo Producto'}
+              {editingProduct ? `Editar: ${editingProduct.name}` : 'Nuevo Producto'}
             </h2>
             <button className="btn btn-secondary btn-icon-only" style={{ width: '32px', height: '32px' }} onClick={() => setShowAddForm(false)}>
               <X size={16} />
@@ -223,7 +226,7 @@ export const AdminCatalog: React.FC = () => {
                     value={sku}
                     onChange={e => setSku(e.target.value)}
                   />
-                  <button type="button" className="btn btn-secondary" onClick={generateSku} style={{ fontSize: '11px', padding: '0 8px' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setSku(generarSku(products.length))} style={{ fontSize: '11px', padding: '0 8px' }}>
                     Auto
                   </button>
                 </div>
@@ -358,15 +361,15 @@ export const AdminCatalog: React.FC = () => {
                   <tr key={product.id}>
                     <td>
                       <img
-                        src={product.imagen_url}
-                        alt={product.nombre}
+                        src={product.image_url}
+                        alt={product.name}
                         style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: 'var(--radius-sm)' }}
                       />
                     </td>
                     <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{product.sku}</td>
-                    <td style={{ fontWeight: 500 }}>{product.nombre}</td>
+                    <td style={{ fontWeight: 500 }}>{product.name}</td>
                     <td style={{ color: 'var(--text-success)', fontWeight: 600 }}>
-                      {formatPrice(parseFloat(product.precio))}
+                      {formatPrice(parseFloat(product.price))}
                     </td>
                     <td>
                       <span style={{ fontWeight: 600, color: product.stock === 0 ? 'var(--accent-red)' : 'var(--text-primary)' }}>
@@ -375,11 +378,11 @@ export const AdminCatalog: React.FC = () => {
                     </td>
                     <td>
                       <button
-                        className={`btn ${product.activo ? 'btn-teal' : 'btn-secondary'}`}
+                        className={`btn ${product.active ? 'btn-teal' : 'btn-secondary'}`}
                         style={{ padding: '4px 8px', fontSize: '11px' }}
                         onClick={() => handleToggleActive(product)}
                       >
-                        {product.activo ? 'Catálogo Activo' : 'Oculto'}
+                        {product.active ? 'Catálogo Activo' : 'Oculto'}
                       </button>
                     </td>
                     <td>
