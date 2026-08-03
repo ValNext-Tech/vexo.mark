@@ -13,7 +13,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="header-container">
           <Link to="/" className="logo">
             <Store className="w-6 h-6 text-emerald-500" style={{ stroke: '#10b981' }} />
-            <span>VEXO</span>
+            <span>LIVEND</span>
           </Link>
 
           <nav className="nav-links">
