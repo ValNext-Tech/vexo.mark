@@ -177,3 +177,96 @@ VALUES
     (CURRENT_DATE + INTERVAL '2 days', '09:00:00', '12:00:00', 5, true),
     (CURRENT_DATE + INTERVAL '2 days', '14:00:00', '18:00:00', 5, true)
 ON CONFLICT DO NOTHING;
+
+-- ─── Migración: Pitch H — Formulario admin alineado con legacy ───────────────
+-- Actualiza place_order para aceptar p_payment_status (pending / partial / paid)
+-- Antes el estado de pago siempre se guardaba como 'pending' sin importar lo que
+-- el admin seleccionara. Ahora el admin puede registrar ventas ya pagadas o parciales.
+CREATE OR REPLACE FUNCTION place_order(
+    p_customer_name TEXT,
+    p_customer_phone TEXT,
+    p_delivery_type TEXT,
+    p_delivery_date DATE,
+    p_hour_hh INT,
+    p_hour_mm INT,
+    p_location TEXT,
+    p_delivery_notes TEXT,
+    p_delivery_slot_id UUID,
+    p_payment_method TEXT,
+    p_payment_status TEXT DEFAULT 'pending',
+    p_total NUMERIC,
+    p_notes TEXT,
+    p_items JSONB
+) RETURNS UUID AS $$
+DECLARE
+    v_customer_id UUID;
+    v_delivery_id UUID;
+    v_order_id UUID;
+    v_item JSONB;
+    v_product_id UUID;
+    v_quantity INT;
+    v_custom_name TEXT;
+    v_image_url TEXT;
+    v_stock INT;
+    v_price NUMERIC;
+BEGIN
+    -- Validar payment_status
+    IF p_payment_status NOT IN ('pending', 'partial', 'paid') THEN
+        RAISE EXCEPTION 'Estado de pago inválido: %', p_payment_status;
+    END IF;
+
+    -- 1. Validar y bloquear stock para productos de catálogo
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+        v_product_id := (v_item->>'product_id')::UUID;
+        v_quantity := (v_item->>'quantity')::INT;
+        
+        IF v_product_id IS NOT NULL THEN
+            SELECT stock, price INTO v_stock, v_price FROM products WHERE id = v_product_id FOR UPDATE;
+            IF v_stock IS NULL THEN
+                RAISE EXCEPTION 'Producto no encontrado';
+            END IF;
+            IF v_stock < v_quantity THEN
+                RAISE EXCEPTION 'Stock insuficiente para uno de los productos';
+            END IF;
+        END IF;
+    END LOOP;
+
+    -- 2. Upsert del cliente
+    INSERT INTO customers (name, phone)
+    VALUES (p_customer_name, p_customer_phone)
+    ON CONFLICT (phone) DO UPDATE 
+    SET name = EXCLUDED.name
+    RETURNING id INTO v_customer_id;
+
+    -- 3. Crear entrega
+    INSERT INTO deliveries (customer_id, delivery_slot_id, delivery_type, delivery_date, hour_hh, hour_mm, location, notes)
+    VALUES (v_customer_id, p_delivery_slot_id, p_delivery_type, p_delivery_date, p_hour_hh, p_hour_mm, p_location, p_delivery_notes)
+    RETURNING id INTO v_delivery_id;
+
+    -- 4. Crear el pedido (ahora con payment_status dinámico)
+    INSERT INTO orders (customer_id, delivery_id, total, payment_method, payment_status, notes)
+    VALUES (v_customer_id, v_delivery_id, p_total, p_payment_method, p_payment_status, p_notes)
+    RETURNING id INTO v_order_id;
+
+    -- 5. Crear los items del pedido
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+        v_product_id := (v_item->>'product_id')::UUID;
+        v_quantity := (v_item->>'quantity')::INT;
+        v_custom_name := v_item->>'custom_name';
+        v_image_url := v_item->>'image_url';
+        
+        IF v_product_id IS NOT NULL THEN
+            SELECT price INTO v_price FROM products WHERE id = v_product_id;
+            INSERT INTO order_items (order_id, product_id, quantity, unit_price, custom_name, image_url)
+            VALUES (v_order_id, v_product_id, v_quantity, v_price, v_custom_name, v_image_url);
+        ELSE
+            v_price := (v_item->>'unit_price')::NUMERIC;
+            INSERT INTO order_items (order_id, product_id, quantity, unit_price, custom_name, image_url)
+            VALUES (v_order_id, NULL, v_quantity, v_price, v_custom_name, v_image_url);
+        END IF;
+    END LOOP;
+
+    RETURN v_order_id;
+END;
+$$ LANGUAGE plpgsql;
+

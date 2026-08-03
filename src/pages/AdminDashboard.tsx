@@ -31,8 +31,10 @@ export const AdminDashboard: React.FC = () => {
   const [orderLocation, setOrderLocation] = useState<string>('');
   const [orderNotes, setOrderNotes] = useState<string>('');
   const [orderPaymentMethod, setOrderPaymentMethod] = useState<string>('transfer');
+  const [orderPaymentStatus, setOrderPaymentStatus] = useState<string>('pending'); // pending | partial | paid
+  const [orderDeliveryDate, setOrderDeliveryDate] = useState<string>(''); // fecha libre (optional, like legacy)
   const [orderSlotId, setOrderSlotId] = useState<string>('');
-  const [orderItems, setOrderItems] = useState<any[]>([]); // [{ product_id, custom_name, quantity, unit_price }]
+  const [orderItems, setOrderItems] = useState<any[]>([]); // [{ product_id, custom_name, quantity, unit_price, imageFile?, imagePreview? }]
   
   // Catálogo cargado para selección en creación de pedidos
   const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
@@ -261,10 +263,17 @@ export const AdminDashboard: React.FC = () => {
       return;
     }
 
+    // Validar foto en ítems libres (requerida como en el legacy)
+    const freeItemsSinFoto = orderItems.filter(item => !item.product_id && !item.imageFile && !item.imagePreview);
+    if (freeItemsSinFoto.length > 0) {
+      alert(`${freeItemsSinFoto.length} artículo(s) sin catálogo no tienen foto. Agrega una imagen a cada artículo libre.`);
+      return;
+    }
+
     try {
       setOrderLoading(true);
 
-      // Subir fotos de ítems libres si las tienen configuradas
+      // Subir fotos de ítems libres
       const processedItems = [];
       for (const item of orderItems) {
         let finalImageUrl = '';
@@ -293,10 +302,8 @@ export const AdminDashboard: React.FC = () => {
         });
       }
 
-      const slot = slots.find(s => s.id === orderSlotId);
-      const deliveryDate = slot ? slot.slot_date : new Date().toISOString().split('T')[0];
-      const startHour = slot ? parseInt(slot.start_time.split(':')[0]) : 12;
-      const startMin = slot ? parseInt(slot.start_time.split(':')[1]) : 0;
+      // Fecha libre (legacy): si no se seleccionó, usar hoy como fallback
+      const deliveryDate = orderDeliveryDate || new Date().toISOString().split('T')[0];
 
       const orderTotal = processedItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
 
@@ -305,12 +312,13 @@ export const AdminDashboard: React.FC = () => {
         p_customer_phone: orderCustomerPhone,
         p_delivery_type: orderDeliveryType,
         p_delivery_date: deliveryDate,
-        p_hour_hh: startHour,
-        p_hour_mm: startMin,
+        p_hour_hh: 12,
+        p_hour_mm: 0,
         p_location: orderLocation,
         p_delivery_notes: orderNotes,
-        p_delivery_slot_id: orderSlotId || null,
+        p_delivery_slot_id: null,
         p_payment_method: orderPaymentMethod,
+        p_payment_status: orderPaymentStatus,
         p_total: orderTotal,
         p_notes: orderNotes,
         p_items: processedItems
@@ -324,6 +332,8 @@ export const AdminDashboard: React.FC = () => {
       setOrderCustomerPhone('');
       setOrderLocation('');
       setOrderNotes('');
+      setOrderPaymentStatus('pending');
+      setOrderDeliveryDate('');
       setOrderItems([]);
       fetchOrders();
       alert('Pedido registrado con éxito por el administrador.');
@@ -746,171 +756,97 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Creación de Pedido Manual (Admin) */}
+      {/* Modal de Creación de Pedido Manual (Admin) — Pitch H: alineado con legacy */}
       {showOrderModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', overflowY: 'auto' }}>
           <form onSubmit={handleCreateOrderSubmit} className="glass animate-fade-in" style={{ padding: '20px', borderRadius: 'var(--radius-md)', maxWidth: '650px', width: '100%', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '90vh', overflowY: 'auto' }}>
+            {/* ── Header ── */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Registrar Pedido Manual</h3>
+              <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Nueva Venta</h3>
               <button type="button" className="btn btn-secondary btn-icon-only" style={{ width: '30px', height: '30px' }} onClick={() => setShowOrderModal(false)}>
                 <X size={16} />
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="form-group">
-                <label className="form-label">Nombre del Cliente</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder="Ej. Juan Perez" 
-                  className="form-control"
-                  value={orderCustomerName}
-                  onChange={e => setOrderCustomerName(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Teléfono/WhatsApp</label>
-                <input 
-                  type="tel" 
-                  required 
-                  placeholder="Ej. 70000000" 
-                  className="form-control"
-                  value={orderCustomerPhone}
-                  onChange={e => setOrderCustomerPhone(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="form-group">
-                <label className="form-label">Tipo de Entrega</label>
-                <select className="form-control" value={orderDeliveryType} onChange={e => setOrderDeliveryType(e.target.value)}>
-                  <option value="personal">🤝 Entrega Personal</option>
-                  <option value="courier">🚚 Courier / Envíos</option>
-                  <option value="pickup">📦 Recojo en Tienda / Terminal</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Dirección de Entrega</label>
-                <input 
-                  type="text" 
-                  required 
-                  placeholder="Ej. Calle Aroma #450" 
-                  className="form-control"
-                  value={orderLocation}
-                  onChange={e => setOrderLocation(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="form-group">
-                <label className="form-label">Método de Pago</label>
-                <select className="form-control" value={orderPaymentMethod} onChange={e => setOrderPaymentMethod(e.target.value)}>
-                  <option value="transfer">💳 Transferencia Bancaria</option>
-                  <option value="cash">💵 Pago contra entrega (Efectivo)</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Horario Programado</label>
-                <select className="form-control" value={orderSlotId} onChange={e => setOrderSlotId(e.target.value)} required>
-                  {slots.map(s => (
-                    <option key={s.id} value={s.id}>
-                      📅 {s.slot_date} ({s.start_time.substring(0,5)} - {s.end_time.substring(0,5)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Listado de Artículos a Pedir */}
+            {/* ── 1. ARTÍCULOS (top — igual que el picker de catálogo en legacy) ── */}
             <div className="glass" style={{ padding: '12px', borderRadius: 'var(--radius-sm)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ fontWeight: 600, fontSize: '13px' }}>Artículos del Pedido</span>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" onClick={addCustomItemToOrder} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }}>
-                    + Item Libre
-                  </button>
-                </div>
+                <span style={{ fontWeight: 600, fontSize: '13px' }}>🛍️ Artículos del Pedido</span>
+                <button type="button" onClick={addCustomItemToOrder} className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}>
+                  + Artículo Libre
+                </button>
               </div>
 
-              {/* Selector de Catálogo */}
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <select 
-                  className="form-control" 
-                  defaultValue="" 
+              {/* Selector de catálogo */}
+              <div className="form-group" style={{ marginBottom: '10px' }}>
+                <select
+                  className="form-control"
+                  defaultValue=""
                   onChange={e => {
                     if (e.target.value) {
                       addCatalogItemToOrder(e.target.value);
-                      e.target.value = "";
+                      e.target.value = '';
                     }
                   }}
                 >
-                  <option value="" disabled>-- Añadir del catálogo --</option>
+                  <option value="" disabled>-- Elegir del catálogo --</option>
                   {catalogProducts.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.name} (Stock: {p.stock} | {formatPrice(p.price)})
+                      {p.name} — Stock: {p.stock} | {formatPrice(p.price)}
                     </option>
                   ))}
                 </select>
               </div>
 
+              {/* Lista de items */}
               {orderItems.length === 0 ? (
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px' }}>
-                  No se han agregado artículos al pedido.
+                  Sin artículos. Elige del catálogo o agrega un artículo libre.
                 </p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
                   {orderItems.map((item, idx) => (
                     <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '6px' }}>
                       {item.product_id ? (
-                        // Item de catálogo
                         <span style={{ flex: 1, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           🛍️ {item.custom_name} ({formatPrice(item.unit_price)})
                         </span>
                       ) : (
-                        // Item libre sin catálogo
                         <div style={{ flex: 1, display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          {/* Botón/Input de subida de imagen para el artículo manual */}
-                          <label 
-                            style={{ 
-                              width: '32px', 
-                              height: '32px', 
-                              borderRadius: '4px', 
-                              border: '1px dashed var(--border-color)', 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              justifyContent: 'center', 
-                              cursor: 'pointer',
-                              overflow: 'hidden',
-                              backgroundColor: 'rgba(0,0,0,0.2)',
-                              flexShrink: 0
+                          {/* Foto requerida para items libres (como en legacy) */}
+                          <label
+                            title={item.imagePreview ? 'Cambiar foto' : 'Foto requerida *'}
+                            style={{
+                              width: '36px', height: '36px',
+                              borderRadius: '6px',
+                              border: item.imagePreview ? '2px solid var(--accent-teal)' : '2px dashed var(--accent-red)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer', overflow: 'hidden',
+                              backgroundColor: 'rgba(0,0,0,0.2)', flexShrink: 0,
+                              position: 'relative'
                             }}
                           >
-                            <input 
-                              type="file" 
-                              accept="image/*" 
-                              style={{ display: 'none' }} 
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
                               onChange={e => {
                                 if (e.target.files && e.target.files[0]) {
-                                  const selectedFile = e.target.files[0];
-                                  updateOrderItem(idx, 'imageFile', selectedFile);
-                                  updateOrderItem(idx, 'imagePreview', URL.createObjectURL(selectedFile));
+                                  const f = e.target.files[0];
+                                  updateOrderItem(idx, 'imageFile', f);
+                                  updateOrderItem(idx, 'imagePreview', URL.createObjectURL(f));
                                 }
                               }}
                             />
-                            {item.imagePreview ? (
-                              <img src={item.imagePreview} alt="Item" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                              <ImageIcon size={14} style={{ color: 'var(--text-muted)' }} />
-                            )}
+                            {item.imagePreview
+                              ? <img src={item.imagePreview} alt="Item" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <ImageIcon size={16} style={{ color: 'var(--accent-red)' }} />
+                            }
                           </label>
-
-                          <input 
-                            type="text" 
-                            placeholder="Nombre del artículo"
-                            className="form-control" 
+                          <input
+                            type="text"
+                            placeholder="Nombre del artículo *"
+                            className="form-control"
                             style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }}
                             value={item.custom_name}
                             onChange={e => updateOrderItem(idx, 'custom_name', e.target.value)}
@@ -918,23 +854,17 @@ export const AdminDashboard: React.FC = () => {
                           />
                         </div>
                       )}
-                      
-                      <input 
-                        type="number" 
-                        min={1} 
-                        placeholder="Cant."
+                      <input
+                        type="number" min={1} placeholder="Cant."
                         className="form-control"
                         style={{ width: '55px', padding: '4px 8px', fontSize: '13px' }}
                         value={item.quantity}
                         onChange={e => updateOrderItem(idx, 'quantity', parseInt(e.target.value) || 1)}
                         required
                       />
-
                       {!item.product_id && (
-                        <input 
-                          type="number" 
-                          min={0} 
-                          placeholder="Precio"
+                        <input
+                          type="number" min={0} placeholder="Bs."
                           className="form-control"
                           style={{ width: '70px', padding: '4px 8px', fontSize: '13px' }}
                           value={item.unit_price}
@@ -942,7 +872,6 @@ export const AdminDashboard: React.FC = () => {
                           required
                         />
                       )}
-
                       <button type="button" onClick={() => removeOrderItem(idx)} className="btn btn-secondary" style={{ padding: '4px', color: 'var(--accent-red)' }}>
                         <Trash2 size={14} />
                       </button>
@@ -952,10 +881,105 @@ export const AdminDashboard: React.FC = () => {
               )}
             </div>
 
+            {/* ── 2. DATOS DEL CLIENTE ── */}
+            <div>
+              <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Datos del cliente</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Teléfono / WhatsApp *</label>
+                  <input
+                    type="tel" required
+                    placeholder="Ej. 70000000"
+                    className="form-control"
+                    value={orderCustomerPhone}
+                    onChange={e => setOrderCustomerPhone(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Nombre del cliente *</label>
+                  <input
+                    type="text" required
+                    placeholder="Ej. Ana Pérez"
+                    className="form-control"
+                    value={orderCustomerName}
+                    onChange={e => setOrderCustomerName(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── 3. DETALLES DE LA VENTA (estado pago + fecha — como legacy) ── */}
+            <div>
+              <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Detalles de la venta</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Estado de pago</label>
+                  <select className="form-control" value={orderPaymentStatus} onChange={e => setOrderPaymentStatus(e.target.value)}>
+                    <option value="pending">💳 Sin pagar</option>
+                    <option value="partial">🕐 Pago parcial</option>
+                    <option value="paid">✅ Pagado</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ color: orderDeliveryDate ? 'inherit' : 'var(--accent-orange, #f97316)' }}>
+                    {orderDeliveryDate ? '📅 Fecha de entrega' : '⚠️ Fecha de entrega (opcional)'}
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    min={new Date().toISOString().split('T')[0]}
+                    value={orderDeliveryDate}
+                    onChange={e => setOrderDeliveryDate(e.target.value)}
+                    style={{ borderColor: orderDeliveryDate ? '' : '#f97316' }}
+                  />
+                </div>
+              </div>
+              {!orderDeliveryDate && (
+                <p style={{ fontSize: '11px', color: '#f97316', marginTop: '4px' }}>
+                  ⚠️ Sin fecha — el pedido aparecerá como "sin fecha de entrega programada"
+                </p>
+              )}
+            </div>
+
+            {/* ── 4. DATOS DE ENTREGA ── */}
+            <div>
+              <p style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Datos de entrega</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group">
+                  <label className="form-label">Tipo de entrega</label>
+                  <select className="form-control" value={orderDeliveryType} onChange={e => setOrderDeliveryType(e.target.value)}>
+                    <option value="personal">🤝 Entrega Personal</option>
+                    <option value="courier">🚚 Courier / Envíos</option>
+                    <option value="pickup">📦 Recojo en Tienda</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Dirección de entrega *</label>
+                  <input
+                    type="text" required
+                    placeholder="Ej. Calle Aroma #450"
+                    className="form-control"
+                    value={orderLocation}
+                    onChange={e => setOrderLocation(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── 5. MÉTODO DE PAGO ── */}
             <div className="form-group">
-              <label className="form-label">Notas Adicionales</label>
-              <textarea 
-                placeholder="Ej. Entregar en bolsa de regalo, cobrar $10 extra de envío..."
+              <label className="form-label">Método de pago</label>
+              <select className="form-control" value={orderPaymentMethod} onChange={e => setOrderPaymentMethod(e.target.value)}>
+                <option value="transfer">💳 Transferencia Bancaria / QR</option>
+                <option value="cash">💵 Efectivo contra entrega</option>
+              </select>
+            </div>
+
+            {/* ── 6. NOTAS ── */}
+            <div className="form-group">
+              <label className="form-label">Notas adicionales</label>
+              <textarea
+                placeholder="Ej. Entregar en bolsa de regalo, cobrar Bs. 10 extra de envío..."
                 className="form-control"
                 rows={2}
                 value={orderNotes}
@@ -963,16 +987,15 @@ export const AdminDashboard: React.FC = () => {
               />
             </div>
 
+            {/* ── Footer: Total + Acciones ── */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
               <div style={{ fontWeight: 700 }}>
                 Total: {formatPrice(orderItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0))}
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={() => setShowOrderModal(false)} className="btn btn-secondary">
-                  Cancelar
-                </button>
+                <button type="button" onClick={() => setShowOrderModal(false)} className="btn btn-secondary">Cancelar</button>
                 <button type="submit" disabled={orderLoading} className="btn btn-primary">
-                  {orderLoading ? 'Guardando...' : 'Crear Pedido'}
+                  {orderLoading ? 'Guardando...' : 'Guardar venta'}
                 </button>
               </div>
             </div>
@@ -982,3 +1005,4 @@ export const AdminDashboard: React.FC = () => {
     </div>
   );
 };
+
