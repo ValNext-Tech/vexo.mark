@@ -74,7 +74,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           marginTop: 'auto',
         }}
       >
-        <p>&copy; {new Date().getFullYear()} Vexo Tienda Virtual. Todos los derechos reservados.</p>
+        <p>&copy; {new Date().getFullYear()} Livend Tienda Virtual. Todos los derechos reservados.</p>
         <p style={{ marginTop: '4px', fontSize: '11px' }}>
           Desarrollado de forma responsiva en la nube por Antigravity.
         </p>
